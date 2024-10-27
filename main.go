@@ -34,6 +34,7 @@ var fileStructure = map[string]string{
 	"/users/user_model.go":          "templates/user_model.txt",
 	"/users/user_service.go":        "templates/user_service.txt",
 	"/users/user_store.go":          "templates/user_store.txt",
+	"/cmd/{projectName}/main.go":    "templates/main.txt",
 }
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 
 	// Replace placeholders in each file template with the provided repo name and description.
 	for targetPath, templatePath := range fileStructure {
-		fullTargetPath := "." + targetPath
+		fullTargetPath := "." + strings.ReplaceAll(targetPath, "{projectName}", *repoName)
 		dir := filepath.Dir(fullTargetPath)
 
 		// Create directories if they don’t exist.
