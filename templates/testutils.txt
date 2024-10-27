@@ -1,0 +1,124 @@
+package tests
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"testing"
+
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
+	tc "github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+// Initialize test containers settings.
+func init() {
+	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+}
+
+// NewTestDB initializes a new PostgreSQL test container and database connection.
+func NewTestDB() (*sqlx.DB, tc.Container, error) {
+	containerReq := tc.ContainerRequest{
+		Image:        "postgres:latest",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER":     "user",
+			"POSTGRES_PASSWORD": "pass",
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForLog("database system is ready to accept connections"),
+			wait.ForListeningPort("5432/tcp"),
+		),
+	}
+
+	dbContainer, err := tc.GenericContainer(context.Background(),
+		tc.GenericContainerRequest{
+			ContainerRequest: containerReq,
+			Started:          true,
+		},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to start container: %w", err)
+	}
+
+	hostPort, err := dbContainer.MappedPort(context.Background(), "5432")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to map container port: %w", err)
+	}
+
+	postgresURLTemplate := "postgres://user:pass@localhost:%s?sslmode=disable"
+	postgresURL := fmt.Sprintf(postgresURLTemplate, hostPort.Port())
+
+	db, err := sqlx.Open("postgres", postgresURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	return db, dbContainer, nil
+}
+
+// RunMigrations applies database migrations to the test database.
+func RunMigrations(t *testing.T, db *sqlx.DB) error {
+	t.Helper()
+	migrationsDir := "../migrations/"
+
+	err := goose.SetDialect("postgres")
+	if err != nil {
+		return fmt.Errorf("failed to set Goose dialect: %w", err)
+	}
+
+	err = goose.Up(db.DB, migrationsDir)
+	if err != nil {
+		return fmt.Errorf("failed to run Goose migrations: %w", err)
+	}
+
+	return nil
+}
+
+// TeardownMigrations rolls back database migrations in the test database.
+func TeardownMigrations(t *testing.T, db *sqlx.DB) error {
+	t.Helper()
+	migrationsDir := "../migrations/"
+
+	err := goose.SetDialect("postgres")
+	if err != nil {
+		return fmt.Errorf("failed to set Goose dialect: %w", err)
+	}
+
+	err = goose.Reset(db.DB, migrationsDir)
+	if err != nil {
+		return fmt.Errorf("failed to reset Goose migrations: %w", err)
+	}
+
+	return nil
+}
+
+// PtrToString is a helper to return a pointer to a string.
+func PtrToString(s string) *string {
+	return &s
+}
+
+// PtrToFloat64 is a helper to return a pointer to a float64.
+func PtrToFloat64(f float64) *float64 {
+	return &f
+}
+
+// ListTables lists all tables in the 'public' schema for debugging.
+func ListTables(db *sqlx.DB) {
+	var tables []string
+	query := `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';`
+
+	err := db.Select(&tables, query)
+	if err != nil {
+		log.Fatalf("failed to list tables: %v", err)
+	}
+
+	fmt.Println("Tables in the 'public' schema:")
+	for _, table := range tables {
+		fmt.Println(table)
+	}
+	fmt.Println("--End of Tables--")
+}

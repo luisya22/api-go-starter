@@ -1,0 +1,71 @@
+package assert
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+// Equal asserts that actual is equal to expected.
+func Equal[T comparable](t *testing.T, actual, expected T) {
+	t.Helper()
+	if actual != expected {
+		t.Errorf("expected: %v, got: %v", expected, actual)
+	}
+}
+
+// NotEqual asserts that actual is not equal to notExpected.
+func NotEqual[T comparable](t *testing.T, actual, notExpected T) {
+	t.Helper()
+	if actual == notExpected {
+		t.Errorf("did not expect: %v, but got: %v", notExpected, actual)
+	}
+}
+
+// StringContains asserts that actual contains expectedSubstring.
+func StringContains(t *testing.T, actual, expectedSubstring string) {
+	t.Helper()
+	if !strings.Contains(actual, expectedSubstring) {
+		t.Errorf("expected '%v' to contain '%v'", actual, expectedSubstring)
+	}
+}
+
+// Nil asserts that actual is nil.
+func Nil(t *testing.T, actual interface{}) {
+	t.Helper()
+	if actual != nil {
+		t.Errorf("expected: nil, got: %v", actual)
+	}
+}
+
+// NotNil asserts that actual is not nil.
+func NotNil(t *testing.T, actual interface{}) {
+	t.Helper()
+	if actual == nil {
+		t.Errorf("expected non-nil, got: nil")
+	}
+}
+
+// NilError asserts that actual error is nil.
+func NilError(t *testing.T, actual error) {
+	t.Helper()
+	if actual != nil {
+		t.Errorf("expected: nil error, got: %v", actual)
+	}
+}
+
+// Error asserts that actual error is not nil.
+func Error(t *testing.T, actual error) {
+	t.Helper()
+	if actual == nil {
+		t.Errorf("expected an error, got: nil")
+	}
+}
+
+// ErrorIs asserts that actual error matches the expected error using errors.Is.
+func ErrorIs(t *testing.T, actual, expected error) {
+	t.Helper()
+	if !errors.Is(actual, expected) {
+		t.Errorf("expected error: %v, but got: %v", expected, actual)
+	}
+}

@@ -1,0 +1,26 @@
+package tests
+
+import (
+    "testing"
+    "time"
+
+    "github.com/jmoiron/sqlx"
+)
+
+var Data TestData
+
+type  TestData struct {
+    Users []users.User
+}
+
+func LoadTestData(t *testing.T, db *sqlx.DB) {
+    t.Helper()
+
+    Data = TestData{
+        Users: loadUsers(t, db),
+    }
+}
+
+func loadUsers(t *testing.T, db *sqlx.DB) []users.User {
+    return []users.User{}
+}

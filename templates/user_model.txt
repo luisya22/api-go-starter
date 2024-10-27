@@ -1,0 +1,19 @@
+package users
+
+import "time"
+
+// User represents a user in the system, with fields commonly used for user management.
+type User struct {
+	ID        int64     `db:"id" json:"id,omitempty"`
+	Email     string    `db:"email" json:"email"`
+	Name      string    `db:"name" json:"name"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Optional fields for projects that may need additional tracking:
+// ExternalID (for third-party identifiers) and Version (for concurrency control).
+type UserOptional struct {
+	ExternalID string `db:"external_id,omitempty" json:"-"`
+	Version    int    `db:"version,omitempty" json:"-"`
+}

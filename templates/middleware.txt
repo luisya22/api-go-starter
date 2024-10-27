@@ -1,0 +1,153 @@
+package api
+
+import (
+	"errors"
+	"expvar"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/felixge/httpsnoop"
+	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/time/rate"
+)
+
+// RecoverPanic middleware recovers from panics and logs the error.
+func (app *Api) RecoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Connection", "close")
+				app.ServerErrorResponse(w, r, fmt.Errorf("%v", err))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RateLimit middleware limits the request rate per IP.
+func (app *Api) RateLimit(next http.Handler) http.Handler {
+	type client struct {
+		limiter  *rate.Limiter
+		lastSeen time.Time
+	}
+
+	var (
+		mu      sync.Mutex
+		clients = make(map[string]*client)
+	)
+
+	// Cleanup routine to remove old clients
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			mu.Lock()
+			for ip, client := range clients {
+				if time.Since(client.lastSeen) > 3*time.Minute {
+					delete(clients, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if app.Config.Limiter.Enabled {
+			ip := r.RemoteAddr
+			mu.Lock()
+			if _, found := clients[ip]; !found {
+				clients[ip] = &client{limiter: rate.NewLimiter(rate.Limit(app.Config.Limiter.RPS), app.Config.Limiter.Burst)}
+			}
+			clients[ip].lastSeen = time.Now()
+
+			if !clients[ip].limiter.Allow() {
+				mu.Unlock()
+				app.RateLimitExceededResponse(w, r)
+				return
+			}
+			mu.Unlock()
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Authenticate middleware checks for a valid JWT token.
+func (app *Api) Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Authorization")
+		authHeader := r.Header.Get("Authorization")
+
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			app.InvalidCredentialsResponse(w, r)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(app.Config.Auth.SigningKey), nil
+		})
+
+		if err != nil || !token.Valid {
+			app.InvalidAuthenticationTokenResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireAuthenticatedUser middleware ensures that the user is authenticated.
+func (app *Api) RequireAuthenticatedUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.ContextGetUser(r)
+		if user.IsAnonymous() {
+			app.AuthenticationRequiredResponse(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// EnableCORS middleware sets CORS headers for trusted origins.
+func (app *Api) EnableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin")
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			for _, trustedOrigin := range app.Config.Cors.TrustedOrigins {
+				if origin == trustedOrigin {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					if r.Method == http.MethodOptions {
+						w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, PUT, PATCH, DELETE")
+						w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Metrics middleware collects and records request metrics.
+func (app *Api) Metrics(next http.Handler) http.Handler {
+	totalRequestsReceived := expvar.NewInt("total_requests_received")
+	totalResponsesSent := expvar.NewInt("total_responses_sent")
+	totalProcessingTimeMicroseconds := expvar.NewInt("total_processing_time_us")
+	totalResponsesSentByStatus := expvar.NewMap("total_responses_sent_by_status")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		totalRequestsReceived.Add(1)
+		metrics := httpsnoop.CaptureMetrics(next, w, r)
+		totalResponsesSent.Add(1)
+		totalProcessingTimeMicroseconds.Add(metrics.Duration.Microseconds())
+		totalResponsesSentByStatus.Add(strconv.Itoa(metrics.Code), 1)
+	})
+}

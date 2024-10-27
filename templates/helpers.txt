@@ -1,0 +1,30 @@
+package server
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+)
+
+func getClassGroupId(r *http.Request) (int64, error) {
+	classGroupIdStr := chi.URLParam(r, "classGroupId")
+
+	classGroupId, err := strconv.ParseInt(classGroupIdStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return classGroupId, nil
+}
+
+func getId(r *http.Request) (int64, error) {
+	idStr := chi.URLParam(r, "id")
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}

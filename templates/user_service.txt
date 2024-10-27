@@ -1,0 +1,93 @@
+package users
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jmoiron/sqlx"
+	"{{RepoPath}}/validator"
+)
+
+var (
+	UserValidationError = errors.New("user data is not valid")
+)
+
+// AnonymousUser represents a default anonymous user instance.
+var AnonymousUser = User{}
+
+// IsAnonymous checks if a user is the anonymous user.
+func (u *User) IsAnonymous() bool {
+	return u == &AnonymousUser
+}
+
+// Service interface defines methods for user-related operations.
+type Service interface {
+	Insert(ctx context.Context, u *User) (error, map[string]string)
+	Update(ctx context.Context, u *User) (error, map[string]string)
+	FindById(ctx context.Context, userId int64) (*User, error)
+	FindByExternalId(ctx context.Context, externalId string) (*User, error)
+}
+
+// UserService struct encapsulates the store for user operations.
+type UserService struct {
+	store store
+}
+
+// NewService creates a new UserService with a database connection.
+func NewService(db *sqlx.DB) *UserService {
+	return &UserService{
+		store: newUserStore(db),
+	}
+}
+
+// validateUser checks essential fields for the user model and adds errors to the validator if invalid.
+func validateUser(v *validator.Validator, u *User) {
+	v.Check(u.Name != "", "name", "must be provided")
+	v.Check(len(u.Name) <= 50, "name", "must not exceed 50 characters")
+	v.Check(validator.Matches(u.Email, validator.EmailRX), "email", "must be a valid email address")
+}
+
+// Insert validates and inserts a new user, returning validation errors if any.
+func (us *UserService) Insert(ctx context.Context, u *User) (error, map[string]string) {
+	v := validator.New()
+
+	validateUser(v, u)
+	if !v.Valid() {
+		return UserValidationError, v.Errors
+	}
+
+	err := us.store.Insert(ctx, u)
+	if err != nil {
+		return fmt.Errorf("UserService: user creation failed: %w", err), nil
+	}
+
+	return nil, nil
+}
+
+// Update validates and updates an existing user, returning validation errors if any.
+func (us *UserService) Update(ctx context.Context, u *User) (error, map[string]string) {
+	v := validator.New()
+
+	validateUser(v, u)
+	if !v.Valid() {
+		return UserValidationError, v.Errors
+	}
+
+	err := us.store.Update(ctx, u)
+	if err != nil {
+		return fmt.Errorf("UserService: user update failed: %w", err), nil
+	}
+
+	return nil, nil
+}
+
+// FindById retrieves a user by their internal ID.
+func (us *UserService) FindById(ctx context.Context, userId int64) (*User, error) {
+	return us.store.ReadById(ctx, userId)
+}
+
+// FindByExternalId retrieves a user by an external ID, useful for third-party authentication.
+func (us *UserService) FindByExternalId(ctx context.Context, externalId string) (*User, error) {
+	return us.store.ReadByExternalId(ctx, externalId)
+}

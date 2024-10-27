@@ -1,0 +1,120 @@
+package users
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jmoiron/sqlx"
+)
+
+type store interface {
+	Insert(ctx context.Context, u *User) error
+	Update(ctx context.Context, u *User) error
+	ReadById(ctx context.Context, userId int64) (*User, error)
+	ReadByExternalId(ctx context.Context, externalId string) (*User, error)
+}
+
+type userStore struct {
+	db *sqlx.DB
+}
+
+var (
+	ErrInsertingUser  = errors.New("error inserting user")
+	ErrUpdatingUser   = errors.New("error updating user")
+	ErrEditConflict   = errors.New("edit conflict")
+	ErrFetchingUser   = errors.New("error fetching user")
+	ErrRecordNotFound = errors.New("record not found")
+)
+
+func newUserStore(db *sqlx.DB) *userStore {
+	return &userStore{db: db}
+}
+
+// Insert inserts a new user record and returns the assigned ID.
+func (us *userStore) Insert(ctx context.Context, u *User) error {
+	query := `INSERT INTO users (clerk_id, email, name, created_at, updated_at)
+			  VALUES ($1, $2, $3, NOW(), NOW())
+			  RETURNING id`
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	err := us.db.QueryRowxContext(ctx, query, u.ClerkId, u.Email, u.Name).Scan(&u.Id)
+	if err != nil {
+		return fmt.Errorf("%w: executing insert query: %v", ErrInsertingUser, err)
+	}
+
+	return nil
+}
+
+// Update updates an existing user, incrementing the version to handle optimistic concurrency.
+func (us *userStore) Update(ctx context.Context, u *User) error {
+	query := `UPDATE users
+			  SET email = $1, name = $2, updated_at = NOW(), version = version + 1
+			  WHERE id = $3 AND version = $4
+			  RETURNING version`
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	err := us.db.QueryRowxContext(ctx, query, u.Email, u.Name, u.Id, u.Version).Scan(&u.Version)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrEditConflict
+		default:
+			return fmt.Errorf("%w: executing update query: %v", ErrUpdatingUser, err)
+		}
+	}
+
+	return nil
+}
+
+// ReadById retrieves a user by their internal ID.
+func (us *userStore) ReadById(ctx context.Context, id int64) (*User, error) {
+	query := `SELECT id, clerk_id, email, name, created_at, updated_at, version
+			  FROM users
+			  WHERE id = $1`
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var user User
+	err := us.db.QueryRowxContext(ctx, query, id).StructScan(&user)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, fmt.Errorf("%w: user with ID %d not found", ErrRecordNotFound, id)
+		default:
+			return nil, fmt.Errorf("%w: executing fetch query: %v", ErrFetchingUser, err)
+		}
+	}
+
+	return &user, nil
+}
+
+// ReadByExternalId retrieves a user by an external identifier, such as a Clerk ID.
+func (us *userStore) ReadByExternalId(ctx context.Context, externalId string) (*User, error) {
+	query := `SELECT id, clerk_id, email, name, created_at, updated_at, version
+			  FROM users
+			  WHERE clerk_id = $1`
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var user User
+	err := us.db.QueryRowxContext(ctx, query, externalId).StructScan(&user)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, fmt.Errorf("%w: user with external ID %s not found", ErrRecordNotFound, externalId)
+		default:
+			return nil, fmt.Errorf("%w: executing fetch query: %v", ErrFetchingUser, err)
+		}
+	}
+
+	return &user, nil
+}

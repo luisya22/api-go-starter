@@ -1,0 +1,64 @@
+package server
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/yourusername/api-go-starter/api"
+)
+
+// Handlers struct to hold the app context, like database, config, etc.
+type Handlers struct {
+	app *api.Application
+}
+
+// routes sets up the routes and middleware for the server.
+func (h *Handlers) routes() http.Handler {
+	router := chi.NewRouter()
+
+	// Middleware configuration
+	router.Use(
+		cors.Handler(cors.Options{
+			AllowedOrigins:   []string{"http://localhost:3000"}, // Customize as needed
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"*"},
+			ExposedHeaders:   []string{"*"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}),
+		middleware.Logger,     // Logs requests
+		middleware.Recoverer,  // Recovers from panics
+	)
+
+	// Health check endpoint
+	router.Get("/v1/healthcheck", h.healthCheckHandler)
+
+	// Example user routes (these should connect to your user service methods)
+	router.Post("/v1/users", h.createUser)
+	router.Get("/v1/users/{id}", h.getUser)
+	router.Patch("/v1/users/{id}", h.updateUser)
+	router.Delete("/v1/users/{id}", h.deleteUser)
+
+	// 404 handler
+	router.NotFound(h.app.NotFoundResponse)
+
+	return router
+}
+
+// healthCheckHandler is a simple health check endpoint.
+func (h *Handlers) healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	env := api.Envelope{
+		"status": "available",
+		"system_info": map[string]string{
+			"environment": h.app.Config.Env,
+			"version":     "0.0.1",
+		},
+	}
+
+	err := h.app.WriteJSON(w, http.StatusOK, env, nil)
+	if err != nil {
+		h.app.ServerErrorResponse(w, r, err)
+	}
+}

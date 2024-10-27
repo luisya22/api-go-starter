@@ -1,0 +1,95 @@
+package api
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+// LogError logs an error with request details.
+func (app *Api) LogError(r *http.Request, err error) {
+	app.Logger.Printf("error: %s | method: %s | url: %s", err.Error(), r.Method, r.URL.String())
+}
+
+// ErrorResponse sends a JSON-formatted error message to the client.
+func (app *Api) ErrorResponse(w http.ResponseWriter, r *http.Request, status int, message any) {
+	env := Envelope{"error": message}
+
+	err := app.WriteJSON(w, status, env, nil)
+	if err != nil {
+		app.LogError(r, err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+// ServerErrorResponse sends a 500 Internal Server Error response.
+func (app *Api) ServerErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.LogError(r, err)
+	message := "the server encountered a problem and could not process your request"
+	app.ErrorResponse(w, r, http.StatusInternalServerError, message)
+}
+
+// NotFoundResponse sends a 404 Not Found response.
+func (app *Api) NotFoundResponse(w http.ResponseWriter, r *http.Request) {
+	message := "the requested resource could not be found"
+	app.ErrorResponse(w, r, http.StatusNotFound, message)
+}
+
+// MethodNotAllowedResponse sends a 405 Method Not Allowed response.
+func (app *Api) MethodNotAllowedResponse(w http.ResponseWriter, r *http.Request) {
+	message := fmt.Sprintf("the %s method is not supported for this resource", r.Method)
+	app.ErrorResponse(w, r, http.StatusMethodNotAllowed, message)
+}
+
+// BadRequestResponse sends a 400 Bad Request response.
+func (app *Api) BadRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.ErrorResponse(w, r, http.StatusBadRequest, err.Error())
+}
+
+// FailedValidationResponse sends a 422 Unprocessable Entity response.
+func (app *Api) FailedValidationResponse(w http.ResponseWriter, r *http.Request, errors map[string]string) {
+	app.ErrorResponse(w, r, http.StatusUnprocessableEntity, errors)
+}
+
+// EditConflictResponse sends a 409 Conflict response for edit conflicts.
+func (app *Api) EditConflictResponse(w http.ResponseWriter, r *http.Request) {
+	message := "unable to update the record due to an edit conflict, please try again"
+	app.ErrorResponse(w, r, http.StatusConflict, message)
+}
+
+// RateLimitExceededResponse sends a 429 Too Many Requests response.
+func (app *Api) RateLimitExceededResponse(w http.ResponseWriter, r *http.Request) {
+	message := "rate limit exceeded"
+	app.ErrorResponse(w, r, http.StatusTooManyRequests, message)
+}
+
+// InvalidCredentialsResponse sends a 401 Unauthorized response for invalid credentials.
+func (app *Api) InvalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
+	message := "invalid authentication credentials"
+	app.ErrorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+// InvalidAuthenticationTokenResponse sends a 401 Unauthorized response for invalid tokens.
+func (app *Api) InvalidAuthenticationTokenResponse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	message := "invalid or missing authentication token"
+	app.ErrorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+// AuthenticationRequiredResponse sends a 401 Unauthorized response for missing authentication.
+func (app *Api) AuthenticationRequiredResponse(w http.ResponseWriter, r *http.Request) {
+	message := "you must be authenticated to access this resource"
+	app.ErrorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+// InactiveAccountResponse sends a 403 Forbidden response for inactive accounts.
+func (app *Api) InactiveAccountResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account must be activated to access this resource"
+	app.ErrorResponse(w, r, http.StatusForbidden, message)
+}
+
+// NotPermittedResponse sends a 403 Forbidden response for insufficient permissions.
+func (app *Api) NotPermittedResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account doesn't have the necessary permissions to access this resource"
+	app.ErrorResponse(w, r, http.StatusForbidden, message)
+}

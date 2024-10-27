@@ -1,0 +1,83 @@
+package server
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/yourusername/api-go-starter/api"
+	"github.com/yourusername/api-go-starter/users"
+)
+
+var (
+	version = "0.0.1"
+)
+
+func StartServer() error {
+	var config api.Config
+
+	// Define CLI flags for configuration
+	flag.IntVar(&config.Port, "port", 8000, "API server port")
+	flag.StringVar(&config.Env, "env", "development", "Environment (development|staging|production)")
+
+	// Database configuration
+	flag.StringVar(&config.DB.DSN, "db-dsn", "", "Database DSN")
+	flag.IntVar(&config.DB.MaxOpenConns, "db-max-open-conns", 25, "Database max open connections")
+	flag.IntVar(&config.DB.MaxIdleConns, "db-max-idle-conns", 25, "Database max idle connections")
+	flag.StringVar(&config.DB.MaxIdleTime, "db-max-idle-time", "15m", "Database max connection idle time")
+
+	// Rate limiter configuration
+	flag.Float64Var(&config.Limiter.RPS, "limiter-rps", 2, "Rate limiter maximum requests per second")
+	flag.IntVar(&config.Limiter.Burst, "limiter-burst", 4, "Rate limiter maximum burst")
+	flag.BoolVar(&config.Limiter.Enabled, "limiter-enabled", true, "Enable rate limiter")
+
+	// CORS and authentication configuration
+	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(val string) error {
+		config.Cors.TrustedOrigins = strings.Fields(val)
+		return nil
+	})
+	flag.StringVar(&config.Auth.SigningKey, "signing-key", "my-secret-key", "JWT signing key")
+	flag.IntVar(&config.Auth.TokenExpirationInMinutes, "token-expiration", 60, "JWT token expiration time (minutes)")
+
+	displayVersion := flag.Bool("version", false, "Display version and exit")
+	flag.Parse()
+
+	// Display version and exit if flag is set
+	if *displayVersion {
+		fmt.Printf("Version: %s\n", version)
+		return nil
+	}
+
+	// Initialize logger
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+
+	// Open database connection
+	db, err := api.OpenDb(config)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	logger.Println("Database connection pool established")
+
+	// Initialize Services
+	userService := users.NewService(db)
+
+	// Initialize the application with config, database, logger, and UserService
+	app := api.NewApplication(
+		config,
+		db,
+		logger,
+		api.WithUserService(userService),
+	)
+
+	// Start the server
+	err = app.Serve()
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+
+	return nil
+}
