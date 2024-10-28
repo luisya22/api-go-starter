@@ -2,13 +2,16 @@ package api
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 )
 
 // LogError logs an error with request details.
 func (app *Api) LogError(r *http.Request, err error) {
-	app.Logger.Printf("error: %s | method: %s | url: %s", err.Error(), r.Method, r.URL.String())
+    app.Logger.Error(
+		err.Error(),
+		"request_method", r.Method,
+		"request_url", r.URL.String(),
+	)
 }
 
 // ErrorResponse sends a JSON-formatted error message to the client.

@@ -3,12 +3,12 @@ package server
 import (
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/yourusername/api-go-starter/api"
-	"github.com/yourusername/api-go-starter/users"
+	"{{RepoPath}}/api"
+	"{{RepoPath}}/users"
 )
 
 var (
@@ -51,7 +51,7 @@ func StartServer() error {
 	}
 
 	// Initialize logger
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// Open database connection
 	db, err := api.OpenDb(config)
@@ -60,7 +60,7 @@ func StartServer() error {
 	}
 	defer db.Close()
 
-	logger.Println("Database connection pool established")
+	logger.Info("Database connection pool established")
 
 	// Initialize Services
 	userService := users.NewService(db)
@@ -73,8 +73,12 @@ func StartServer() error {
 		api.WithUserService(userService),
 	)
 
+    h := &Handlers{
+        app: app,
+    }
+
 	// Start the server
-	err = app.Serve()
+	err = h.Serve()
 	if err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}

@@ -42,7 +42,7 @@ func (us *userStore) Insert(ctx context.Context, u *User) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	err := us.db.QueryRowxContext(ctx, query, u.ClerkId, u.Email, u.Name).Scan(&u.Id)
+	err := us.db.QueryRowxContext(ctx, query, u.ExternalID, u.Email, u.Name).Scan(&u.ID)
 	if err != nil {
 		return fmt.Errorf("%w: executing insert query: %v", ErrInsertingUser, err)
 	}
@@ -60,7 +60,7 @@ func (us *userStore) Update(ctx context.Context, u *User) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	err := us.db.QueryRowxContext(ctx, query, u.Email, u.Name, u.Id, u.Version).Scan(&u.Version)
+	err := us.db.QueryRowxContext(ctx, query, u.Email, u.Name, u.ID, u.Version).Scan(&u.Version)
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):

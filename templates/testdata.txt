@@ -2,9 +2,9 @@ package tests
 
 import (
     "testing"
-    "time"
 
     "github.com/jmoiron/sqlx"
+    "{{RepoPath}}/users"
 )
 
 var Data TestData

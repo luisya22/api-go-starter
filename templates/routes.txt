@@ -1,17 +1,21 @@
 package server
 
 import (
+    "encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/yourusername/api-go-starter/api"
+	"{{RepoPath}}/api"
+    "{{RepoPath}}/users"
 )
 
 // Handlers struct to hold the app context, like database, config, etc.
 type Handlers struct {
-	app *api.Application
+	app *api.Api
 }
 
 // routes sets up the routes and middleware for the server.
@@ -37,9 +41,9 @@ func (h *Handlers) routes() http.Handler {
 
 	// Example user routes (these should connect to your user service methods)
 	router.Post("/v1/users", h.createUser)
-	router.Get("/v1/users/{id}", h.getUser)
-	router.Patch("/v1/users/{id}", h.updateUser)
-	router.Delete("/v1/users/{id}", h.deleteUser)
+	// router.Get("/v1/users/{id}", h.getUser)
+	// router.Patch("/v1/users/{id}", h.updateUser)
+	// router.Delete("/v1/users/{id}", h.deleteUser)
 
 	// 404 handler
 	router.NotFound(h.app.NotFoundResponse)
@@ -58,6 +62,55 @@ func (h *Handlers) healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := h.app.WriteJSON(w, http.StatusOK, env, nil)
+	if err != nil {
+		h.app.ServerErrorResponse(w, r, err)
+	}
+}
+
+// createUser handles the POST /v1/users route for creating a new user. you can move to a separate file (e.g users_handlers.go)
+func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID         int64     `db:"id" json:"id,omitempty"`
+		Email      string    `db:"email" json:"email"`
+		Name       string    `db:"name" json:"name"`
+		ExternalID string    `db:"external_id,omitempty" json:"-"`
+		Version    int       `db:"version,omitempty" json:"-"`
+		CreatedAt  time.Time `db:"created_at" json:"created_at"`
+		UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
+	}
+
+	// Decode the request body into the User struct
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		h.app.BadRequestResponse(w, r, err)
+		return
+	}
+
+	user := &users.User{
+		ID:         input.ID,
+		Email:      input.Email,
+		Name:       input.Name,
+		ExternalID: input.ExternalID,
+		Version:    input.Version,
+		CreatedAt:  input.CreatedAt,
+		UpdatedAt:  input.UpdatedAt,
+	}
+
+	// Create the user using the UserService
+	err, validationErrors := h.app.Services.UserService.Insert(r.Context(), user)
+	if err != nil {
+		switch {
+		case errors.Is(err, users.UserValidationError):
+			h.app.FailedValidationResponse(w, r, validationErrors)
+		default:
+			h.app.ServerErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// Respond with the created user
+	env := api.Envelope{"user": user}
+	err = h.app.WriteJSON(w, http.StatusCreated, env, nil)
 	if err != nil {
 		h.app.ServerErrorResponse(w, r, err)
 	}

@@ -1,23 +1,23 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/yourusername/api-go-starter/users"
+	"{{RepoPath}}/users"
 )
 
 // Api struct for holding configuration, logger, and services
 type Api struct {
 	Config   Config
-	Logger   *log.Logger
+	Logger   *slog.Logger
 	Wg       sync.WaitGroup
 	Services *Services
 }
 
 // NewApplication initializes the Api with configuration, database, logger, and optional services
-func NewApplication(cfg Config, db *sqlx.DB, logger *log.Logger, options ...Option) *Api {
+func NewApplication(cfg Config, db *sqlx.DB, logger *slog.Logger, options ...Option) *Api {
 	s := &Services{}
 	for _, option := range options {
 		option(s)

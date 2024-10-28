@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"expvar"
 	"fmt"
 	"net/http"
